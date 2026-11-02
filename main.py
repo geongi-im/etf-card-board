@@ -8,6 +8,7 @@
 전송(--send)은 두 갈래다. HTML 은 MQWAY 게시판에 올리고, PNG 는 게시물 링크를
 붙여 텔레그램 운영 방으로 보낸다. 기본값은 보내지 않는 것이다. 실서버에 잘못
 올라간 글은 지우기 전까지 되돌릴 수 없으므로 --send 를 명시해야만 전송한다.
+--threads 를 더하면 MQWAY 썸네일 주소로 Threads 에도 게시한다.
 
 프로젝트 개요와 사용법은 README.md 를 참고한다.
 """
@@ -351,6 +352,28 @@ def deliver(b, png_path, draft=None):
             "PNG 생성", "이미지가 없어 텔레그램 사진 전송을 건너뛰었습니다. 로그를 확인하세요."))
 
 
+def post_threads(draft):
+    """deliver() 가 이미지 주소를 채운 초안을 Threads 에 게시한다 (--threads).
+
+    deliver() 와 같은 규칙이다. 실패해도 보드 생성은 성공이므로 종료 코드는 0 을
+    유지하고, 실패 사실은 텔레그램 실패 방으로 보낸다. 사유는 로그에 남는다.
+    같은 날짜를 이미 게시했으면 publish_draft() 가 막는다.
+    """
+    try:
+        from utils.telegram_util import TelegramUtil
+        from utils.threads_util import publish_draft
+    except ImportError as e:
+        logger.error(f"Threads 게시 건너뜀: 패키지 미설치 ({e})")
+        return
+    if not draft:
+        logger.error("Threads 게시 건너뜀: 초안이 없다")
+        return
+    if not publish_draft(draft, publish=True):
+        telegram = TelegramUtil()
+        telegram.send_error(telegram.failure_message(
+            "Threads 게시", f"게시하지 못했습니다. 로그를 확인하세요. 초안: {draft}"))
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -363,6 +386,8 @@ def main():
     ap.add_argument("--check", action="store_true", help="환경 자가진단 (.env/KRX 로그인/데이터 확인)")
     ap.add_argument("--send", action="store_true",
                     help="HTML 은 MQWAY 게시판에, PNG 는 텔레그램에 전송 (기본: 전송 안 함)")
+    ap.add_argument("--threads", action="store_true",
+                    help="--send 뒤에 Threads 에도 게시 (--send 와 함께만 쓸 수 있음)")
     args = ap.parse_args()
 
     if args.check:
@@ -372,6 +397,9 @@ def main():
     # 없다. 렌더링 확인용인 --demo 와 전송은 함께 쓰지 못하게 막는다.
     if args.demo and args.send:
         ap.error("--demo 는 샘플 데이터라 --send 와 함께 쓸 수 없습니다.")
+    # Threads 는 MQWAY 썸네일 주소로 이미지를 받는다. 그 주소는 --send 게시가 끝나야 생긴다.
+    if args.threads and not args.send:
+        ap.error("--threads 는 --send 와 함께 써야 합니다 (이미지 주소가 MQWAY 게시에서 나옵니다).")
 
     if args.demo:
         # 데모도 PNG 를 찍으므로 WKHTMLTOIMAGE_PATH 를 읽어야 한다.
@@ -434,6 +462,9 @@ def main():
     if args.send:
         logger.info("MQWAY 게시 / 텔레그램 전송 중...")
         deliver(b, png_path, draft)
+        if args.threads:
+            logger.info("Threads 게시 중...")
+            post_threads(draft)
 
 
 if __name__ == "__main__":

@@ -87,6 +87,7 @@ TELEGRAM_CHAT_TEST_ID=실패알림방      # 비우면 운영 방으로 간다
 ```bash
 .venv\Scripts\python main.py                    # 오늘 기준, HTML/PNG 만 만들고 전송 안 함
 .venv\Scripts\python main.py --send             # 오늘 기준, MQWAY 게시 + 텔레그램 전송까지
+.venv\Scripts\python main.py --send --threads   # 위에 더해 Threads 게시까지
 .venv\Scripts\python main.py --date 2026-10-28  # 기준일 지정
 .venv\Scripts\python main.py --demo             # 샘플 데이터로 렌더링만 확인 (KRX 접속 불필요)
 ```
@@ -95,6 +96,7 @@ TELEGRAM_CHAT_TEST_ID=실패알림방      # 비우면 운영 방으로 간다
 |---|---|
 | `--date YYYY-MM-DD` | 기준 거래일. 생략하면 오늘. `output\etf_card_board_YYYYMMDD.html` / `.png` 생성 (둘 다 텔레그램 이미지 레이아웃) |
 | `--send` | HTML 은 MQWAY 게시판에, PNG 는 텔레그램에 전송. **기본은 전송하지 않음** |
+| `--threads` | `--send` 뒤에 Threads 에도 게시. `--send` 없이는 못 씀 (이미지 주소가 MQWAY 게시에서 나옴) |
 | `--out 경로` | HTML 출력 경로 직접 지정. PNG 는 같은 이름에 확장자만 `.png` |
 | `--demo` | 내장 샘플로 렌더링만 확인. `output\_demo.html` / `.png`에 저장. `--send`와 함께 못 씀 |
 | `--check` | 환경 자가진단 |
@@ -171,6 +173,10 @@ wkhtmltoimage 는 PNG 를 거의 압축하지 않습니다 (예전 4열 보드 1
 ```
 main.py --send (운영 BASE_URL) -> 초안에 썸네일 주소 기록 -> threads_post.py --publish
 ```
+
+`main.py --send --threads` 로 한 번에 할 수도 있습니다. Threads 게시에 실패해도 보드와
+MQWAY/텔레그램 전송은 그대로 두고, 실패 사실만 텔레그램 실패 방으로 보냅니다.
+`threads_post.py` 는 따로 다시 올리거나 미리보기할 때 씁니다.
 
 Threads 관련 처리(계정 연결, 토큰, 게시)는 모두 공통 모듈 `utils/threads_util.py` 에
 있습니다. 다른 프로젝트에서도 같은 파일을 가져다 씁니다. **앱 만들기, 테스터 등록,
