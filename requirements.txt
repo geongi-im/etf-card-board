@@ -1,0 +1,7 @@
+pykrx>=1.2.8
+pandas>=2.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+httpx>=0.28
+imgkit>=1.2.3
+Pillow>=10.0.0
