@@ -166,6 +166,56 @@ wkhtmltoimage 는 PNG 를 거의 압축하지 않습니다 (예전 4열 보드 1
 
 ---
 
+## Threads 게시 (`threads_post.py`)
+
+```
+main.py --send (운영 BASE_URL) -> 초안에 썸네일 주소 기록 -> threads_post.py --publish
+```
+
+Threads 관련 처리(계정 연결, 토큰, 게시)는 모두 공통 모듈 `utils/threads_util.py` 에
+있습니다. 다른 프로젝트에서도 같은 파일을 가져다 씁니다. **앱 만들기, 테스터 등록,
+토큰 발급 순서는 그 파일 맨 위 설명에 있습니다.** `threads_post.py` 는 기준일로 이
+프로젝트의 초안 파일을 찾아 넘기기만 합니다.
+
+Threads API 는 이미지 파일을 직접 받지 않고 **공개 https 주소만** 받습니다. 그래서
+`main.py --send` 가 MQWAY 에 올린 썸네일 주소(게시 응답의 `data.thumbnail_url`)를
+씁니다. `BASE_URL` 이 `http://localhost` 이면 그 주소를 Meta 서버가 받지 못하므로,
+운영 서버(`https://mqway.com`)로 게시한 날만 Threads 에 올릴 수 있습니다.
+
+`main.py` 는 실행할 때마다 보드 옆에 초안 `output\etf_card_board_YYYYMMDD.threads.json` 을
+남깁니다. 본문(`render.threads_text()`), 주제 태그(`main.THREADS_TOPIC_TAG`), 대체 텍스트는
+항상 적고, 이미지 주소는 `--send` 게시가 성공했을 때 적습니다.
+
+```bash
+# 게시
+.venv\Scripts\python threads_post.py                    # 가장 최근 초안 미리보기 (게시 안 함)
+.venv\Scripts\python threads_post.py --publish          # 게시
+.venv\Scripts\python threads_post.py --date 2026-10-30  # 날짜 지정
+
+# 계정/토큰 (공통 모듈)
+.venv\Scripts\python -m utils.threads_util login    # 토큰 발급 (인증 주소 열고 code 붙여넣기)
+.venv\Scripts\python -m utils.threads_util refresh  # 장기 토큰 60일 연장
+```
+
+| `threads_post.py` 옵션 | 설명 |
+|---|---|
+| `--publish` | 실제로 게시. **기본은 미리보기** (본문, 글자 수, 이미지 주소 접속 확인) |
+| `--date YYYY-MM-DD` | 초안 날짜. 생략하면 가장 최근 초안 (`_demo` 제외) |
+
+동작상 알아둘 점:
+
+- 게시는 컨테이너 생성 -> 상태 `FINISHED` 대기(문서 권장 30초) -> `threads_publish`
+  세 단계라 30초 넘게 걸립니다.
+- 게시하면 초안에 게시물 id 와 주소가 적히고, 같은 초안은 다시 올리지 않습니다.
+  다시 올리려면 초안의 `threads_media_id` 를 지웁니다 (코드에서는 `publish_draft(force=True)`).
+- 장기 토큰은 60일짜리입니다. 만료되면 연장할 수 없어 토큰 발급을 다시 해야 하므로
+  그 전에 `refresh` 를 돌립니다.
+- Threads 제한: 본문 500자, 이미지 PNG/JPEG 8MB 이하, 24시간 게시 250건. 이미지 폭은
+  320~1440px 를 벗어날 때만 Threads 가 늘리거나 줄입니다.
+- 썸네일은 `ApiUtil` 이 800px 로 줄여 올리므로 Threads 이미지도 폭 800px 입니다.
+
+---
+
 ## 데이터 기준
 
 | 항목 | 출처 (pykrx) | 기준 |
@@ -208,10 +258,13 @@ KRX 정보데이터시스템이 장중에 당일 시세를 얼마나 늦게 갱�
 | `render.py` | 렌더링. 색(`PALETTE`), 등락률 포맷, SVG 미니차트, 게시판 조각/텔레그램 이미지 문서/캡션, PNG(wkhtmltoimage), CSS |
 | `utils/api_util.py` | MQWAY 게시판 API (liquidity-feed 에서 가져옴) |
 | `utils/telegram_util.py` | 텔레그램 메시지/사진 전송 (liquidity-feed 에서 가져와 `send_photo` 추가) |
+| `threads_post.py` | 기준일로 Threads 초안을 찾아 게시 (처리는 `utils/threads_util.py`) |
+| `utils/threads_util.py` | Threads 공통 모듈. 계정 연결 안내, 토큰 발급/연장, 이미지 게시, 초안 파일, 명령줄 (`python -m utils.threads_util login/refresh/post`) |
 | `utils/logger_util.py` | 로거. `logs/YYYY-MM-DD_log.log` |
 | `requirements.txt` | 의존성 (pykrx, pandas, requests, python-dotenv, httpx, imgkit, Pillow) |
-| `.env` / `.env.example` | KRX 계정, wkhtmltoimage 경로, MQWAY 주소, 텔레그램 (`.env`는 공유 금지) |
+| `.env` / `.env.example` | KRX 계정, wkhtmltoimage 경로, MQWAY 주소, 텔레그램, Threads (`.env`는 공유 금지) |
 | `output/*.html`, `output/*.png` | 생성된 보드 |
+| `output/*.threads.json` | Threads 초안 (본문, 이미지 주소, 게시 기록) |
 | `logs/*.log` | 실행 로그 (커밋 제외) |
 
 의존 방향은 `main.py -> render.py -> collect.py` 한 방향입니다.

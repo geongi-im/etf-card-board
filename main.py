@@ -21,7 +21,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from collect import Bundle, collect_krx, demo_bundle
-from render import render, render_fragment, render_png, report_title, summary_lines
+from render import (render, render_fragment, render_png, report_title, summary_lines,
+                    threads_text)
 from utils.logger_util import LoggerUtil
 
 # 스케줄러로 돌리면 콘솔 출력은 아무도 보지 않는다. 진행 상황과 실패 사유를
@@ -253,6 +254,9 @@ def selftest():
 POST_CATEGORY = "섹터분석"
 POST_WRITER = "admin"
 
+# Threads 주제 태그. 게시물당 하나만 붙는다 (1~50자, 마침표와 & 불가).
+THREADS_TOPIC_TAG = "ETF"
+
 
 def make_png(html, path):
     """보드 PNG 를 만든다. 실패하면 사유를 남기고 None.
@@ -273,16 +277,38 @@ def make_png(html, path):
     return path
 
 
-def deliver(b, png_path):
+def save_threads_draft(b, html_path):
+    """Threads 게시글 초안(본문)을 보드 옆에 저장한다. 게시는 threads_post.py 가 한다.
+
+    이미지 주소는 MQWAY 게시가 끝나야 생기므로 deliver() 가 채운다. 초안 저장이
+    실패해도 보드 생성은 성공이므로 경고만 남긴다.
+    """
+    try:
+        from utils.threads_util import draft_path, update_draft
+        path = draft_path(html_path)
+        update_draft(path, title=report_title(b), date=b.date, text=threads_text(b),
+                     topic_tag=THREADS_TOPIC_TAG, alt_text=f"{report_title(b)} 보드 이미지")
+    except Exception as e:
+        logger.warning(f"Threads 초안 저장 실패: {type(e).__name__}: {e}")
+        return None
+    logger.info(f"Threads 초안 저장: {path}")
+    return path
+
+
+def deliver(b, png_path, draft=None):
     """HTML 조각을 MQWAY 에 게시하고, PNG 를 텔레그램 운영 방으로 보낸다.
 
     둘은 서로 독립이다. 게시가 실패해도 PNG 는 링크 없이 보내고, 실패 사유는
     텔레그램 실패 방으로 따로 보낸다. 전송 실패는 생성 실패가 아니므로 종료 코드는
     0 을 유지한다. HTML/PNG 파일은 output/ 에 남아 있다.
+
+    게시에 성공하면 MQWAY 가 돌려준 썸네일 주소를 Threads 초안(draft)에 적는다.
+    Threads API 는 이미지를 공개 주소로만 받기 때문이다.
     """
     try:
         from utils.api_util import ApiError, ApiUtil, MissingSettingError
         from utils.telegram_util import TelegramUtil
+        from utils.threads_util import update_draft
     except ImportError as e:
         logger.error(f"전송 건너뜀: 패키지 미설치 ({e})")
         logger.error("    조치: pip install -r requirements.txt")
@@ -305,6 +331,12 @@ def deliver(b, png_path):
         )
         url = api.post_url(result)
         logger.info(f"MQWAY 게시 완료: {url or '(링크 확인 실패)'}")
+        image_url = (result.get("data") or {}).get("thumbnail_url")
+        if draft and image_url:
+            update_draft(draft, image_url=image_url, post_url=url)
+            logger.info(f"Threads 초안에 이미지 주소 기록: {image_url}")
+        elif draft:
+            logger.warning("게시 응답에 썸네일 주소가 없어 Threads 초안에 이미지 주소를 적지 못했다")
     except MissingSettingError as e:
         logger.error(f"MQWAY 게시 건너뜀: {e}")
         telegram.send_error(telegram.failure_message("MQWAY 설정", str(e)))
@@ -397,10 +429,11 @@ def main():
 
     logger.info("[3/3] PNG 생성 중...")
     png_path = make_png(html, os.path.splitext(out)[0] + ".png")
+    draft = save_threads_draft(b, out)
 
     if args.send:
         logger.info("MQWAY 게시 / 텔레그램 전송 중...")
-        deliver(b, png_path)
+        deliver(b, png_path, draft)
 
 
 if __name__ == "__main__":

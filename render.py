@@ -167,6 +167,26 @@ def summary_lines(b):
     return lines
 
 
+def threads_text(b):
+    """Threads 게시글 본문. 평문이다 (Threads 는 HTML 을 해석하지 않는다).
+
+    500자 상한이 있어 텔레그램 캡션처럼 ETF 마다 링크를 걸지 않는다. 상위 ETF 는
+    이미지의 카드와 같은 FOCUS_N 종을 싣는다. 해시태그는 본문에 적지 않고 게시할 때
+    topic_tag 로 붙인다 (utils/threads_util.py).
+    """
+    up, down, flat = movers(b)
+    lines = [f"{BOARD_TITLE} ({b.date} 기준)", "",
+             f"{len(up) + len(down) + flat}종 중 상승 {len(up)} / 하락 {len(down)} / 보합 {flat}"]
+    for mark, label, cards in (("▲", "상승 상위", up), ("▼", "하락 상위", down)):
+        if cards:
+            lines += ["", f"{mark} {label}"]
+            lines += [f"{c.name} {signed(c.chg_pct)}" for c in cards[:FOCUS_N]]
+    lines += ["", f"카드 속 차트는 {CHART_MONTHS}개월 흐름, 오른쪽은 비중 상위 "
+                  f"{FOCUS_HOLDINGS}종목의 당일 등락률입니다.",
+              "출처: KRX"]
+    return "\n".join(lines)
+
+
 def report_title(b):
     """게시글 제목과 텔레그램 캡션 첫 줄."""
     return f"{BOARD_TITLE} ({b.date})"
