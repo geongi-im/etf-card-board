@@ -27,7 +27,7 @@ import os
 from datetime import datetime
 from string import Template
 
-from collect import CHART_MONTHS, Bundle
+from collect import CHART_MONTHS, ETF_SHORT_NAMES, Bundle
 
 BOARD_TITLE = "섹터 ETF 현황"
 BOARD_HANDLE = "@mq_way.finance"    # 제목 위(머리글 왼쪽 위)에 싣는 계정 이름
@@ -167,23 +167,38 @@ def summary_lines(b):
     return lines
 
 
+def short_name(name):
+    """Threads 본문용 짧은 이름. 표에 없으면 표시명에서 운용사(첫 단어)만 뗀다."""
+    return ETF_SHORT_NAMES.get(name) or name.split(" ", 1)[-1]
+
+
+def threads_question(up, down):
+    """본문 끝의 댓글 유도 한 줄. 그날 상승/하락 중 많은 쪽에 맞춘다."""
+    if len(down) > len(up):
+        return "반등은 어느 섹터에서 먼저 나올까요?"
+    if len(up) > len(down):
+        return "이 흐름, 다음 거래일에도 이어질까요?"
+    return "요즘 눈여겨보는 섹터 있으세요?"
+
+
 def threads_text(b):
     """Threads 게시글 본문. 평문이다 (Threads 는 HTML 을 해석하지 않는다).
 
-    500자 상한이 있어 텔레그램 캡션처럼 ETF 마다 링크를 걸지 않는다. 상위 ETF 는
-    이미지의 카드와 같은 FOCUS_N 종을 싣는다. 해시태그는 본문에 적지 않고 게시할 때
-    topic_tag 로 붙인다 (utils/threads_util.py).
+    브리핑 형식으로 매일 같은 틀을 쓴다. 상승/하락 상위는 이미지의 카드와 같은
+    FOCUS_N 종을 짧은 이름으로 한 줄에 잇고, 끝에 댓글을 부르는 질문 한 줄을 둔다.
+    500자 상한이 있어 ETF 마다 링크를 걸지 않는다. 출처는 이미지 하단에 있어 뺀다.
+    해시태그는 본문에 적지 않고 게시할 때 topic_tag 로 붙인다 (utils/threads_util.py).
     """
     up, down, flat = movers(b)
-    lines = [f"{BOARD_TITLE} ({b.date} 기준)", "",
-             f"{len(up) + len(down) + flat}종 중 상승 {len(up)} / 하락 {len(down)} / 보합 {flat}"]
-    for mark, label, cards in (("▲", "상승 상위", up), ("▼", "하락 상위", down)):
+    day = datetime.strptime(b.date, "%Y-%m-%d")
+    lines = [f"[{day.month}/{day.day} 섹터 ETF 브리핑]",
+             f"상승 {len(up)} / 하락 {len(down)} / 보합 {flat}", ""]
+    for mark, cards in (("▲", up), ("▼", down)):
         if cards:
-            lines += ["", f"{mark} {label}"]
-            lines += [f"{c.name} {signed(c.chg_pct)}" for c in cards[:FOCUS_N]]
-    lines += ["", f"카드 속 차트는 {CHART_MONTHS}개월 흐름, 오른쪽은 비중 상위 "
-                  f"{FOCUS_HOLDINGS}종목의 당일 등락률입니다.",
-              "출처: KRX"]
+            lines.append(f"{mark} " + " / ".join(
+                f"{short_name(c.name)} {signed(c.chg_pct)}" for c in cards[:FOCUS_N]))
+    lines += ["", f"카드마다 {CHART_MONTHS}개월 차트와 비중 상위 종목 등락을 같이 담았습니다.",
+              threads_question(up, down)]
     return "\n".join(lines)
 
 
