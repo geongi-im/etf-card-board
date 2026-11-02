@@ -152,11 +152,12 @@ class TelegramUtil:
         """보드 사진 캡션. parse_mode 가 HTML 이라 escape 가 필요하다.
 
         훑어보는 알림이라 짧게 유지한다. 제목, 요약 몇 줄, 링크로 끝낸다.
-        facts 는 render.summary_lines() 가 만든다. url 이 없으면(게시를 안 했거나
-        실패) 링크 줄을 빼고 보낸다.
+        facts 는 render.summary_lines() 가 만든다. ETF 링크가 들어 있는 텔레그램
+        HTML 이고 escape 도 거기서 끝냈으므로 여기서는 그대로 붙인다. url 이
+        없으면(게시를 안 했거나 실패) 링크 줄을 빼고 보낸다.
         """
         lines = [f"📈 <b>{html_mod.escape(title)}</b>", ""]
-        lines += [html_mod.escape(line) for line in facts]
+        lines += facts
         if url:
             # 문구 링크로 건다. 주소를 그대로 노출하면 텔레그램이 누를 수 있는
             # 링크로 만들어 주지 않는 경우가 있다.

@@ -115,7 +115,7 @@ TELEGRAM_CHAT_TEST_ID=실패알림방      # 비우면 운영 방으로 간다
 | 대상 | 보내는 것 | 비고 |
 |---|---|---|
 | MQWAY `POST {BASE_URL}/api/board-research` | `render_fragment()` 조각 | 카테고리 `섹터분석`, 작성자 `admin` 고정 (`main.py`) |
-| 텔레그램 운영 방 `sendPhoto` | 보드 PNG | 캡션: 제목, 요약 몇 줄, 게시물 링크 |
+| 텔레그램 운영 방 `sendPhoto` | 보드 PNG | 캡션: 제목, 상승/하락/보합 개수, 상승/하락 상위 3종(이름에 네이버 증권 링크, `render.NAVER_ITEM_URL`), 게시물 링크 |
 | 텔레그램 실패 방 | 실패 사유 | MQWAY 게시 실패, PNG 생성 실패 |
 
 동작상 알아둘 점:

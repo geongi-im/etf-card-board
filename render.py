@@ -55,6 +55,11 @@ PALETTE = {
 # 국내 종목 페이지가 없다.
 NAVER_NEWS_URL = "https://finance.naver.com/item/news.naver?code={code}"
 
+# 텔레그램 캡션에서 ETF 이름에 거는 링크. 네이버 증권 종목 페이지로 간다.
+# 지금은 stock.naver.com/domestic/stock/{code} 로 넘겨 주며, 0090B0 처럼 영문이
+# 섞인 신규 코드도 같은 방식으로 넘어간다.
+NAVER_ITEM_URL = "https://finance.naver.com/item/main.naver?code={code}"
+
 # PNG 캡처 폭 (px). 이미지 문서 폭(CSS 의 .eci)과 맞춘다.
 PNG_WIDTH = 1080
 
@@ -144,17 +149,21 @@ def movers(b):
 def summary_lines(b):
     """텔레그램 캡션 본문. 등락 개수 한 줄과 상승/하락 상위를 개조식으로 적는다.
 
+    텔레그램 HTML(parse_mode=HTML)로 만든다. ETF 이름에 네이버 증권 링크를 걸고
+    글자는 여기서 escape 하므로, 받는 쪽(TelegramUtil.photo_caption)은 다시
+    escape 하지 않는다.
+
     날짜는 캡션 제목(report_title)에 있으므로 다시 적지 않는다. 휴대폰에서
     훑어보는 알림이라 ETF 를 쉼표로 잇지 않고 한 줄에 하나씩 둔다. 빈 문자열은
     빈 줄이다.
     """
     up, down, flat = movers(b)
-    lines = [f"{len(b.cards)}종 중 상승 {len(up)} / 하락 {len(down)}"
-             + (f" / 보합 {flat}" if flat else "")]
+    lines = [f"상승 {len(up)} / 하락 {len(down)} / 보합 {flat}"]
     for mark, label, cards in (("▲", "상승 상위", up), ("▼", "하락 상위", down)):
         if cards:
             lines += ["", f"{mark} {label}"]
-            lines += [f"- {c.name} {signed(c.chg_pct)}" for c in cards[:SUMMARY_TOP_N]]
+            lines += [f'- <a href="{NAVER_ITEM_URL.format(code=esc(c.code))}">{esc(c.name)}</a> '
+                      f"{signed(c.chg_pct)}" for c in cards[:SUMMARY_TOP_N]]
     return lines
 
 
