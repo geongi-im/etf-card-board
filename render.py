@@ -172,13 +172,53 @@ def short_name(name):
     return ETF_SHORT_NAMES.get(name) or name.split(" ", 1)[-1]
 
 
-def threads_question(up, down):
-    """본문 끝의 댓글 유도 한 줄. 그날 상승/하락 중 많은 쪽에 맞춘다."""
-    if len(down) > len(up):
-        return "반등은 어느 섹터에서 먼저 나올까요?"
-    if len(up) > len(down):
-        return "이 흐름, 다음 거래일에도 이어질까요?"
-    return "요즘 눈여겨보는 섹터 있으세요?"
+# Threads 본문 끝 질문을 고르는 기준. 방향 3가지 x 세기 3가지 = 9칸, 칸마다 2개다.
+QUESTION_LEAN = 2       # 한쪽 개수가 다른 쪽의 이 배 이상이면 그쪽 우세, 아니면 혼조
+QUESTION_BIG = 5.0      # 가장 크게 움직인 ETF 의 등락폭(%)이 이 이상이면 큰 장
+QUESTION_QUIET = 2.0    # 이 미만이면 잔잔한 장
+
+THREADS_QUESTIONS = {
+    ("up", "big"): ["급등한 섹터, 지금 따라가시겠어요 아니면 기다리시겠어요?",
+                    "이렇게 크게 오른 날, 차익 실현하시나요 더 들고 가시나요?"],
+    ("up", "normal"): ["이 흐름, 다음 거래일에도 이어질까요?",
+                       "오늘 오른 섹터 중 하나만 고른다면 어디인가요?"],
+    ("up", "quiet"): ["조용히 오른 하루, 다음 주도 섹터는 어디가 될까요?",
+                      "큰 움직임 없이 오른 하루, 이런 날은 어떻게 대응하세요?"],
+    ("down", "big"): ["크게 빠진 섹터, 저가 매수 기회로 보시나요?",
+                      "이 정도 하락이면 비중을 줄이시나요 늘리시나요?"],
+    ("down", "normal"): ["반등은 어느 섹터에서 먼저 나올까요?",
+                         "오늘 빠진 섹터 중 가장 아쉬운 곳은 어디인가요?"],
+    ("down", "quiet"): ["살짝 밀린 하루, 쉬어가는 흐름일까요 하락의 시작일까요?",
+                        "크게 흔들리진 않은 하루, 지금 장을 어떻게 보세요?"],
+    ("mixed", "big"): ["섹터별로 크게 엇갈린 하루, 어느 쪽에 서 계세요?",
+                       "오른 쪽과 빠진 쪽 차이가 컸던 하루, 순환매로 보시나요?"],
+    ("mixed", "normal"): ["요즘 눈여겨보는 섹터 있으세요?",
+                          "오른 섹터와 빠진 섹터, 다음 거래일엔 자리가 바뀔까요?"],
+    ("mixed", "quiet"): ["방향을 못 정한 하루, 다음엔 어느 쪽으로 움직일까요?",
+                         "잔잔한 하루, 요즘 관심 두고 지켜보는 섹터 있으세요?"],
+}
+
+
+def threads_question(up, down, day):
+    """본문 끝의 댓글 유도 한 줄. 그날 방향과 세기로 THREADS_QUESTIONS 의 칸을 고른다.
+
+    방향은 상승/하락 개수로 정한다 (QUESTION_LEAN). 세기는 우세한 쪽에서 가장 크게
+    움직인 ETF 의 등락폭이고, 혼조면 양쪽 중 큰 값이다. up/down 은 movers() 가
+    등락폭 순으로 정렬해 두므로 첫 번째가 가장 크게 움직인 ETF 다.
+
+    칸 안의 멘트는 날짜(day)로 고른다. 무작위가 아니라 같은 날 초안을 다시 만들어도
+    본문이 같다. 연이은 거래일은 날짜 차이가 1 이나 3(주말) 이라 번갈아 나온다.
+    """
+    if len(up) > len(down) and len(up) >= QUESTION_LEAN * len(down):
+        side, cards = "up", up[:1]
+    elif len(down) > len(up) and len(down) >= QUESTION_LEAN * len(up):
+        side, cards = "down", down[:1]
+    else:
+        side, cards = "mixed", up[:1] + down[:1]
+    move = max((abs(c.chg_pct) for c in cards), default=0)
+    size = "big" if move >= QUESTION_BIG else "quiet" if move < QUESTION_QUIET else "normal"
+    options = THREADS_QUESTIONS[(side, size)]
+    return options[day.toordinal() % len(options)]
 
 
 def threads_text(b):
@@ -198,7 +238,7 @@ def threads_text(b):
             lines.append(f"{mark} " + " / ".join(
                 f"{short_name(c.name)} {signed(c.chg_pct)}" for c in cards[:FOCUS_N]))
     lines += ["", f"카드마다 {CHART_MONTHS}개월 차트와 비중 상위 종목 등락을 같이 담았습니다.",
-              threads_question(up, down)]
+              threads_question(up, down, day)]
     return "\n".join(lines)
 
 
