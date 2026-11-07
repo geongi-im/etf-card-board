@@ -25,6 +25,7 @@ from collect import Bundle, collect_krx, demo_bundle
 from render import (render, render_fragment, render_png, report_title, summary_lines,
                     threads_text)
 from utils.logger_util import LoggerUtil
+from utils.holiday_util import HolidayUtil, HolidayDataError
 
 # 스케줄러로 돌리면 콘솔 출력은 아무도 보지 않는다. 진행 상황과 실패 사유를
 # logs/YYYY-MM-DD_log.log 에 남겨 나중에 원인을 되짚을 수 있게 한다.
@@ -413,6 +414,22 @@ def main():
             dt = datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
             ap.error("날짜 형식은 YYYY-MM-DD 입니다.")
+        # --date로 명시한 실행(수동/보정)은 그대로 돌리고, cron처럼 오늘 날짜로
+        # 돌 때만 휴장일이면 스킵한다. 수동 재실행을 막으면 복구를 못 하기 때문이다.
+        if not args.date:
+            load_env()
+            try:
+                holiday = HolidayUtil()
+                if not holiday.is_today_trading_day():
+                    logger.info("오늘은 KRX 휴장일입니다. 실행을 스킵합니다.")
+                    sys.exit(0)
+            except HolidayDataError as e:
+                logger.error(f"휴장일 데이터 확인 실패: {e}")
+                sys.exit(1)
+            except Exception as e:
+                # 거래일로 가정하지 말고 실패로 처리한다(holiday_util 설계 원칙).
+                logger.error(f"휴장일 조회 중 오류: {e}")
+                sys.exit(1)
         b = Bundle(date=date_str, date_krx=dt.strftime("%Y%m%d"))
         loaded = load_env()
         login_id, login_pw = krx_credentials()
