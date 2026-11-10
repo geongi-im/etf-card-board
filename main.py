@@ -145,11 +145,47 @@ def report_krx_login_failure(code, msg, emit=None):
     """
     emit = emit or print
     emit(f"    사유: {code + ': ' if code else ''}{msg}")
-    fix = KRX_LOGIN_FIX.get(code)
+    fix = krx_login_fix(code, msg)
     if fix:
         emit(f"    조치: {fix}")
-    elif code:
-        emit("    조치: data.krx.co.kr에 해당 계정으로 직접 로그인해 상태를 확인하세요.")
+
+
+def krx_login_fix(code, msg):
+    """실패 코드/메시지에 맞는 조치 문구. 알 수 없으면 None.
+
+    KRX 는 90일마다 비밀번호 변경을 요구한다. 그 응답('패스워드 변경 필요')의
+    코드가 KRX_LOGIN_FIX 에 없더라도 메시지로 알아보고 변경 안내를 준다.
+    """
+    fix = KRX_LOGIN_FIX.get(code)
+    if fix:
+        return fix
+    if "변경" in (msg or ""):
+        return KRX_LOGIN_FIX["CD010"]
+    if code:
+        return "data.krx.co.kr에 해당 계정으로 직접 로그인해 상태를 확인하세요."
+    return None
+
+
+def notify_krx_login_failure(date_str, code, msg):
+    """KRX 로그인 실패를 텔레그램 실패 방(TELEGRAM_CHAT_TEST_ID)으로 알린다.
+
+    cron 으로 돌면 로그를 보는 사람이 없어, 비밀번호 만료(90일)로 매일 조용히
+    실패하게 된다. 알림 실패는 작업 실패가 아니므로 예외를 내지 않는다.
+    --send 여부와 상관없이 보낸다. 실패 방 알림은 운영 게시물이 아니다.
+    """
+    try:
+        from utils.telegram_util import TelegramUtil
+    except ImportError as e:
+        logger.error(f"텔레그램 알림 건너뜀: 패키지 미설치 ({e})")
+        return
+    lines = [f"기준일: {date_str}",
+             f"사유: {code + ': ' if code else ''}{msg}"]
+    fix = krx_login_fix(code, msg)
+    if fix:
+        lines.append(f"조치: {fix}")
+    lines.append("보드 생성과 전송이 모두 중단되었습니다.")
+    telegram = TelegramUtil()
+    telegram.send_error(telegram.failure_message("KRX 로그인", "\n".join(lines)))
 
 
 # ---------------------------------------------------------------------------
@@ -444,15 +480,22 @@ def main():
         except ImportError:
             logger.error("pykrx 미설치: pip install -r requirements.txt")
             sys.exit(1)
-        except RuntimeError as e:
-            logger.error(str(e))
-            # 시세가 비면 '휴장일'처럼 보이지만 실제로는 로그인 실패인 경우가 많다.
+        except Exception as e:
+            logger.error(f"KRX 수집 실패: {type(e).__name__}: {e}")
+            # pykrx 는 로그인에 실패해도 예외를 내지 않고 빈 응답으로 넘어간다. 그래서
+            # 로그인 실패가 빈 시세(RuntimeError, 휴장일처럼 보임)나 pykrx 내부의
+            # KeyError 같은 조회 오류로 나타난다. 예외 종류로는 가릴 수 없으므로
+            # 어떤 예외든 로그인을 직접 확인한다.
             logged_in, code, msg = probe_krx_login()
             if not logged_in:
-                logger.error("실제 원인: KRX 로그인 실패 (휴장일 문제가 아닙니다)")
+                logger.error("실제 원인: KRX 로그인 실패 (휴장일/데이터 문제가 아닙니다)")
                 report_krx_login_failure(code, msg, emit=logger.error)
                 logger.error("    점검: .venv\\Scripts\\python main.py --check")
-            sys.exit(1)
+                notify_krx_login_failure(date_str, code, msg)
+                sys.exit(1)
+            if isinstance(e, RuntimeError):
+                sys.exit(1)
+            raise
 
     logger.info("[2/3] HTML 렌더링 중...")
     html = render(b)
