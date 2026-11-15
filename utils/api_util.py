@@ -49,6 +49,10 @@ WRITER_MAX = 50
 THUMBNAIL_MAX_BYTES = 1 * 1024 * 1024
 THUMBNAIL_MAX_WIDTH = 800
 
+# 앱 푸시 회원 지정 발송 (POST /api/push/send-users). 서버 PushService::USER_IDS_MAX 와 같게 둔다.
+PUSH_USER_IDS_MAX = 500
+PUSH_TIMEOUT_SEC = 10.0
+
 
 class MissingSettingError(RuntimeError):
     """필수 환경변수가 없을 때. 어떤 값을 어떻게 채우는지 메시지에 담는다."""
@@ -249,3 +253,88 @@ class ApiUtil:
             raise ApiError(resp.status_code, f"서버가 실패로 응답: {resp.text[:300]}")
 
         return body
+
+    def send_push_to_users(
+        self,
+        user_ids: str | list[str],
+        title: str,
+        body: str | None = None,
+        link: str | None = None,
+        dedupe_key: str | None = None,
+    ) -> dict:
+        """지정한 회원에게 앱 푸시를 보낸다. (POST /api/push/send-users)
+
+        받는 사람은 지정한 회원 중 활성 회원 + 마케팅 정보 수신 동의 + 알림을 켠 기기가 있는 회원이다.
+        .env 의 PUSH_API_KEY 를 X-Push-Key 헤더로 보낸다. 게시판 API 와 달리 키가 없으면 401 이다.
+
+        user_ids    받을 회원 아이디(mq_member.mq_user_id). 한 명이면 문자열도 된다. 최대 500개
+        title       알림 제목 (필수, 100자 이내)
+        body        알림 본문 (500자 이내)
+        link        알림을 눌렀을 때 열 주소. 사이트 경로(/board-research/123) 또는 사이트 주소
+        dedupe_key  같은 키로는 한 번만 보낸다. 재시도해도 두 번 가지 않게 날짜/대상을 넣어 만든다.
+                    받는 회원이 다르면 키도 달라야 한다. 예) "etf:2026-11-14:hong123"
+
+        응답 dict 의 data.result 로 결과를 나눈다.
+          accepted  (202) 발송 시작. 기기별 결과는 서버 mq_push_logs 의 data.log_idx 행에 남는다
+          no_target (200) 받을 수 있는 회원이 없어 보내지 않았다
+          duplicate (409) 같은 dedupe_key 로 이미 보냈다. 재시도 상황이라 실패로 보지 않는다
+        data.skipped_user_ids 는 지정했지만 받지 못하는 아이디다. (없는 아이디, 탈퇴/정지, 미동의, 기기 없음)
+
+        그 밖의 실패(키 없음, 401, 422, 429 분당 60회 초과, 503, 연결 실패)는 ApiError 를 낸다.
+        """
+        key = os.getenv("PUSH_API_KEY", "").strip()
+        if not key:
+            raise ApiError(400, "환경변수 PUSH_API_KEY 가 없다. .env 에 설정한다 (.env.example 참고)")
+
+        if isinstance(user_ids, str):
+            user_ids = [user_ids]
+        user_ids = [u.strip() for u in (user_ids or []) if u and u.strip()]
+        if not user_ids:
+            raise ApiError(400, "푸시를 받을 회원 아이디가 없다")
+        if len(user_ids) > PUSH_USER_IDS_MAX:
+            raise ApiError(400, f"한 번에 {PUSH_USER_IDS_MAX}명까지 보낼 수 있다 (요청 {len(user_ids)}명)")
+        if not title or not title.strip():
+            raise ApiError(400, "푸시 제목이 비어 있다")
+
+        payload: dict = {"user_ids": user_ids, "title": title}
+        if body is not None:
+            payload["body"] = body
+        if link is not None:
+            payload["link"] = link
+        if dedupe_key is not None:
+            payload["dedupe_key"] = dedupe_key
+
+        url = f"{base_url()}/api/push/send-users"
+        self.logger.info(f"푸시 발송 요청: {len(user_ids)}명, 제목={title}, dedupe_key={dedupe_key}")
+
+        try:
+            resp = httpx.post(
+                url,
+                json=payload,
+                headers={"Accept": "application/json", "X-Push-Key": key},
+                timeout=PUSH_TIMEOUT_SEC,
+            )
+        except httpx.RequestError as exc:
+            raise ApiError(500, f"{url} 요청 실패: {type(exc).__name__}: {exc}") from exc
+
+        resp.encoding = "utf-8"
+        try:
+            result = resp.json()
+        except ValueError as exc:
+            raise ApiError(resp.status_code, f"JSON 이 아닌 응답: {resp.text[:300]}") from exc
+
+        data = result.get("data") or {}
+        if resp.status_code == 409 and data.get("result") == "duplicate":
+            self.logger.info(f"이미 보낸 푸시라 건너뛴다: dedupe_key={dedupe_key}")
+            return result
+
+        if not result.get("success", False):
+            raise ApiError(resp.status_code, f"푸시 발송 실패: {resp.text[:300]}")
+
+        self.logger.info(
+            f"푸시 발송 {data.get('result')}: 대상 기기 {data.get('target_count')}, log_idx={data.get('log_idx')}"
+        )
+        skipped = data.get("skipped_user_ids") or []
+        if skipped:
+            self.logger.info(f"푸시를 받지 못하는 회원 {len(skipped)}명 (미동의/기기 없음 등): {skipped}")
+        return result
