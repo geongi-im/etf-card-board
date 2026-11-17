@@ -505,5 +505,26 @@ CSS = """
   .eci.post .cols > tbody > tr > td.gap { display: none; }
   .eci.post .ft .r { text-align: left; }
   .eci.post .hd .t { font-size: 26px; }
+  /* 머리글은 제목과 기준일/상승하락 개수가 한 줄을 나눠 쓰는데, 휴대폰 폭에서는
+     제목 칸이 좁아져 '섹터 ETF 현/황' 으로 꺾였다. 위아래로 쌓고 제목은 단어 단위로만 접는다. */
+  .eci.post .hd, .eci.post .hd > tbody, .eci.post .hd > tbody > tr,
+  .eci.post .hd > tbody > tr > td { display: block; width: auto; }
+  .eci.post .hd .t { padding-bottom: 6px; word-break: keep-all; }
+  .eci.post .hd .m { text-align: left; font-size: 14px; }
+  /* 휴대폰 폭에서 나머지 표의 고정 열(차트/등락률/수익률)이 이름 칸을 80px 남짓으로
+     줄여 이름이 'TIGER 여...' 로 잘렸다. 고정 열을 좁히고 이름은 두 줄까지 접는다.
+     keep-all 로 단어 단위로 접고, 한 단어가 칸보다 길 때만 글자 단위로 끊는다.
+     미니차트 svg 는 viewBox 가 있어 CSS 폭만 줄여도 비율대로 줄어든다. */
+  .eci.post .panel { padding: 4px 12px; }
+  .eci.post .rest td { height: auto; padding: 7px 0; }
+  .eci.post .rest td.n { padding-right: 6px; font-size: 13.5px; line-height: 1.3;
+    white-space: normal; word-break: keep-all; overflow-wrap: break-word; }
+  .eci.post .rest td.sp2 { width: 52px; }
+  .eci.post .rest td.sp2 svg { width: 48px; height: auto; }
+  .eci.post .rest td.v { width: 60px; font-size: 13.5px; }
+  .eci.post .rest td.p { width: 52px; font-size: 12px; }
+  /* 상위 카드 이름도 긴 것(코리아휴머노이드로봇산업 등)은 잘리므로 같이 접는다. */
+  .eci.post .fc-h .nm { white-space: normal; word-break: keep-all; overflow-wrap: break-word;
+    line-height: 1.3; }
 }
 """
